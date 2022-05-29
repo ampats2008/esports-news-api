@@ -8,5 +8,6 @@ const { getArticles } = require("../controllers/controllers")
 
 // *: DEFINE ENDPOINTS FOR API HERE:
 router.route("/").get(getArticles)
+router.route("/:source").get(getArticles)
 
 module.exports = router
