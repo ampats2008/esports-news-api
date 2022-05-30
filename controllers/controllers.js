@@ -1,6 +1,7 @@
 const res = require("express/lib/response")
 const axios = require("axios")
 const cheerio = require("cheerio")
+const asyncHandler = require("express-async-handler") // adds support for my custom errorHandler middleware to async Express routes
 
 const sources = [
   {
@@ -14,24 +15,37 @@ const sources = [
 ]
 
 // functions that define actions to take when someone hits an API endpoint
-const getArticles = async (req, res) => {
+const getArticles = asyncHandler(async (req, res, next) => {
   let returnedArticles = []
 
   if (req.params.hasOwnProperty("source")) {
     // if user defines a news source, get articles from that news source
-    const promArticles = fetchArticles(req.params.source)
-    returnedArticles.push(promArticles)
+
+    if (sources.some((source) => req.params.source === source.id)) {
+      const promArticles = fetchArticles(req.params.source)
+      returnedArticles.push(promArticles)
+    } else {
+      res.status(400)
+      throw new Error(
+        "The given source is not supported by the eSports News API at this time."
+      )
+    }
   } else {
-    //  if source is undefined, loop thru each source and return articles
+    //  if source is undefined, loop thru each source and return articles (as promises)
     sources.forEach((src) => {
       const promArticles = fetchArticles(src.id)
       returnedArticles.push(promArticles)
     })
   }
 
-  // TODO: flatten and sort articles by timestamp before returning results
-  res.status(201).json(await Promise.all(returnedArticles))
-}
+  res.status(201).json(
+    await (
+      await Promise.all(returnedArticles)
+    )
+      .flat(1) // flatten array
+      .sort((a, b) => new Date(b?.timestamp) - new Date(a?.timestamp)) // sort articles from most to least recently posted
+  )
+})
 
 const fetchArticles = async (sourceId, options) => {
   const sourceUrl = sources.find(
