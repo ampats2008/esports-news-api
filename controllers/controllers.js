@@ -10,9 +10,21 @@ const sources = [
   },
   {
     id: "dotesports",
-    url: "https://dotesports.com/",
+    url: `https://dotesports.com/`,
   },
+  ...[2, 3].map((i) => ({
+    id: "dotesports",
+    url: `https://dotesports.com/page/${i}`,
+  })), // if all sources are used, we will return the first 5 pages of dotEsports articles
 ]
+
+/*
+* NOTE:
+  dotEsports has category 'Counter-Strike'
+  dexerto has category 'CS:GO'
+
+  These results should be merged on a GET request to CS:GO articles on my API
+*/
 
 // functions that define actions to take when someone hits an API endpoint
 const getArticles = asyncHandler(async (req, res, next) => {
@@ -22,7 +34,7 @@ const getArticles = asyncHandler(async (req, res, next) => {
     // if user defines a news source, get articles from that news source
 
     if (sources.some((source) => req.params.source === source.id)) {
-      const promArticles = fetchArticles(req.params.source)
+      const promArticles = fetchArticles(req.params.source, req.query)
       returnedArticles.push(promArticles)
     } else {
       res.status(400)
@@ -33,7 +45,7 @@ const getArticles = asyncHandler(async (req, res, next) => {
   } else {
     //  if source is undefined, loop thru each source and return articles (as promises)
     sources.forEach((src) => {
-      const promArticles = fetchArticles(src.id)
+      const promArticles = fetchArticles(src.id, req.query)
       returnedArticles.push(promArticles)
     })
   }
@@ -47,16 +59,44 @@ const getArticles = asyncHandler(async (req, res, next) => {
   )
 })
 
-const fetchArticles = async (sourceId, options) => {
-  const sourceUrl = sources.find(
+const fetchArticles = async (sourceId, queryObj) => {
+  let sourceUrl = sources.find(
     (src) => src.id.toLowerCase() === sourceId.toLowerCase()
   ).url
 
   try {
-    // make get request to URL
-    // TODO: if 'options' are passed with URL, include them in the url.
+    // Try to make a GET request to the URL
+    if (queryObj && "page" in queryObj && sourceId === "dotesports") {
+      // if there is a page query string param AND we're looking for 'dotesports' articles, then change the url.
+      // pagination isn't supported by dexerto since they use infinite scrolling
+      sourceUrl += `page/${queryObj.page}`
+    }
+
     const response = await axios.get(sourceUrl)
-    return scrapePageOfSource(response.data, sourceId)
+
+    const responseScraped = scrapePageOfSource(response.data, sourceId)
+
+    if (queryObj && "categories" in queryObj) {
+      const filterByArr = queryObj.categories.toLowerCase().split(",")
+
+      // * handle cases where certain category names should be interchangable
+      const cod = ["cod", "call of duty"]
+      const cs = ["cs", "cs:go", "counter-strike"]
+
+      // if one of the former categories is included in the query param, then also filter by the interchangable category names
+      if (cs.some((opt) => filterByArr.includes(opt))) filterByArr.push(...cs)
+      if (cod.some((opt) => filterByArr.includes(opt))) filterByArr.push(...cod)
+
+      const uniqueFilterBy = [...new Set(filterByArr)] // remove duplicates from filterByArr
+
+      return responseScraped.filter((article) =>
+        article.categories.some((cat) =>
+          uniqueFilterBy.includes(cat.name.toLowerCase())
+        )
+      )
+    }
+
+    return responseScraped
   } catch (err) {
     throw new Error("Error fetching articles.", err)
   }
@@ -127,10 +167,12 @@ const scrapeDexerto = (html, sourceId) => {
   $("div.js-post-container", html).each(function (i, el) {
     const title = $("h2.js-post-title", this).text()
     const link = $("a.js-post-title-link", this).attr("href")
-    const category = {
-      name: $("a.js-category-link", this).text().trim(),
-      link: $("a.js-category-link", this).attr("href"),
-    }
+    const categories = [
+      {
+        name: $("a.js-category-link", this).text().trim(),
+        link: $("a.js-category-link", this).attr("href"),
+      },
+    ]
     const thumbnail = $("img", this).attr("data-lazy-src")
     const timestamp = formatDexertoTimeStamp(
       $("p.js-published-date", this).text()
@@ -142,7 +184,7 @@ const scrapeDexerto = (html, sourceId) => {
       source,
       title,
       link,
-      category,
+      categories,
       thumbnail,
       timestamp,
     })
@@ -181,8 +223,42 @@ URL: has path params for category and pagination
 
 */
 
-const scrapeDotEsports = (html) => {
-  return [{ msg: "from Dotesports" }]
+const scrapeDotEsports = (html, sourceId) => {
+  const $ = cheerio.load(html)
+  const articles = []
+
+  // all elements are contained within an < article /> tag
+  $("article", html).each(function (i, el) {
+    const title = $("h3.entry-title", this).text()
+    const link = $("h3.entry-title > a", this).attr("href")
+    const categories = []
+
+    $("a[rel='category tag']", this).each(function (i, el) {
+      // dotEsports can have more than one category, so push all of them to an array of categories.
+      const name = $(this).text()
+      const link = $(this).attr("href")
+      categories.push({ name, link })
+    })
+
+    const thumbnail = $("a.post-thumbnail > img", this).attr("src")
+    const timestamp = $("time.entry-date", this).attr("datetime")
+
+    const slug = $("p.entry-lede", this).text().trim()
+
+    const source = sourceId
+
+    articles.push({
+      source,
+      title,
+      link,
+      categories,
+      thumbnail,
+      timestamp,
+      slug,
+    })
+  })
+
+  return articles
 }
 
 module.exports = {
