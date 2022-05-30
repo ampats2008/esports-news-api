@@ -2,26 +2,6 @@ const res = require("express/lib/response")
 const axios = require("axios")
 const cheerio = require("cheerio")
 
-// functions that define actions to take when someone hits an API endpoint
-const getArticles = (req, res) => {
-  let returnedArticles = []
-
-  if (source in req.params) {
-    // if user defines a news source, get articles from that news source
-    returnedArticles.push(fetchArticles(req.params.source))
-  } else {
-    //  if source is undefined, loop thru each source and return articles
-    sources.forEach((src) => {
-      const articles = fetchArticles(src.id)
-      returnedArticles.push(articles)
-    })
-  }
-
-  // TODO: flatten and sort articles by timestamp before returning results
-
-  res.status(201).json(returnedArticles)
-}
-
 const sources = [
   {
     id: "dexerto",
@@ -32,6 +12,49 @@ const sources = [
     url: "https://dotesports.com/",
   },
 ]
+
+// functions that define actions to take when someone hits an API endpoint
+const getArticles = async (req, res) => {
+  let returnedArticles = []
+
+  if (req.params.hasOwnProperty("source")) {
+    // if user defines a news source, get articles from that news source
+    const promArticles = fetchArticles(req.params.source)
+    returnedArticles.push(promArticles)
+  } else {
+    //  if source is undefined, loop thru each source and return articles
+    sources.forEach((src) => {
+      const promArticles = fetchArticles(src.id)
+      returnedArticles.push(promArticles)
+    })
+  }
+
+  // TODO: flatten and sort articles by timestamp before returning results
+  res.status(201).json(await Promise.all(returnedArticles))
+}
+
+const fetchArticles = async (sourceId, options) => {
+  const sourceUrl = sources.find(
+    (src) => src.id.toLowerCase() === sourceId.toLowerCase()
+  ).url
+
+  try {
+    // make get request to URL
+    // TODO: if 'options' are passed with URL, include them in the url.
+    const response = await axios.get(sourceUrl)
+    return scrapePageOfSource(response.data, sourceId)
+  } catch (err) {
+    throw new Error("Error fetching articles.", err)
+  }
+}
+
+const scrapePageOfSource = (html, sourceId) => {
+  if (sourceId.toLowerCase() === "dexerto") {
+    return scrapeDexerto(html, sourceId)
+  } else if (sourceId.toLowerCase() === "dotesports") {
+    return scrapeDotEsports(html, sourceId)
+  } else throw new Error("Source not supported for page scraping.")
+}
 
 /*
 DEXERTO - Esports category page:
@@ -59,8 +82,59 @@ ARTICLE CATEGORY -- GAME, BUSINESS, ENTERTAINMENT </a>
 
 */
 
-const scrapeDexerto = (html) => {
-  return [{ msg: "from Dexerto" }]
+// web-scraping helpers:
+const formatDexertoTimeStamp = (timeString) => {
+  // timeString format: '1-7 Days', '1 Week', '1 Month', etc.
+  // given a time string in this format, return a JS date obj = currentDate - timeString
+
+  const currentDate = new Date()
+  const timeAgo = Number(timeString.slice(0, timeString.indexOf(" "))) // grab first two chars and cast to num: Ex: '1 ', '12'
+  const timeStr = timeString.toLowerCase() // case insensitivity
+
+  if (timeStr.includes("hour"))
+    currentDate.setHours(currentDate.getHours() - timeAgo) // domain: 1 - 24 HOURS AGO
+  if (timeStr.includes("day"))
+    currentDate.setDate(currentDate.getDate() - timeAgo) // domain: 1 - 7 DAYS AGO
+  if (timeStr.includes("week"))
+    currentDate.setDate(currentDate.getDate() - timeAgo * 7) // domain: 1 - 4 WEEKS AGO
+  if (timeStr.includes("month"))
+    currentDate.setMonth(currentDate.getMonth() - timeAgo) // domain: 1 - 12 MONTHS AGO
+  if (timeStr.includes("year"))
+    currentDate.setFullYear(currentDate.getFullYear() - timeAgo) // domain: >=1 YEARS AGO
+
+  return currentDate.toJSON() // return new date (we modified the currentDate)
+}
+
+const scrapeDexerto = (html, sourceId) => {
+  const $ = cheerio.load(html)
+  const articles = []
+
+  // all elements are contained within a <div class="js-post-container" /> tag
+  $("div.js-post-container", html).each(function (i, el) {
+    const title = $("h2.js-post-title", this).text()
+    const link = $("a.js-post-title-link", this).attr("href")
+    const category = {
+      name: $("a.js-category-link", this).text().trim(),
+      link: $("a.js-category-link", this).attr("href"),
+    }
+    const thumbnail = $("img", this).attr("data-lazy-src")
+    const timestamp = formatDexertoTimeStamp(
+      $("p.js-published-date", this).text()
+    )
+
+    const source = sourceId
+
+    articles.push({
+      source,
+      title,
+      link,
+      category,
+      thumbnail,
+      timestamp,
+    })
+  })
+
+  return articles
 }
 
 /* DOTESPORTS
@@ -95,30 +169,6 @@ URL: has path params for category and pagination
 
 const scrapeDotEsports = (html) => {
   return [{ msg: "from Dotesports" }]
-}
-
-const fetchArticles = (sourceId, options) => {
-  const sourceUrl = sources.find(
-    (src) => src.id.toLowerCase() === sourceId.toLowerCase()
-  )
-
-  axios
-    .get(sourceUrl)
-    .then((response) => {
-      const jsonRes = scrapePage(response?.data, sourceId)
-      res.status(200).json(jsonRes)
-    })
-    .catch((err) => {
-      throw new Error(err)
-    })
-}
-
-const scrapePage = (html, sourceId) => {
-  if (sourceId.toLowerCase() === "dexerto") {
-    return scrapeDexerto(html)
-  } else if (sourceId.toLowerCase() === "dotesports") {
-    return scrapeDotEsports(html)
-  } else throw new Error("Source not supported for page scraping.")
 }
 
 module.exports = {
