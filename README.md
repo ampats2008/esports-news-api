@@ -46,23 +46,23 @@ There are 3 valid endpoints for the API at this time:
 
 1. GET Articles from All Sources
 
-   > `https://api-esports-news.herokuapp.com/api/`
+   > https://api-esports-news.herokuapp.com/api/
 
    This is the root endpoint for the API. It will fetch articles from all the supported news sources. They will be sorted from most recently published to oldest.
 
 2. GET Articles from One Source
 
-   > `https://api-esports-news.herokuapp.com/api/`<span style='color:mediumseagreen'>:source/</span>
+   > https://api-esports-news.herokuapp.com/api/<span style='color:mediumseagreen'>:source/</span>
 
    This endpoint allows you to return the latest articles from a specified news source. It corresponds to the `source` field found in each resource.
 
-   For example, to get articles from _Dexerto_, you would make a GET request to `https://api-esports-news.herokuapp.com/api/dexerto/`.
+   For example, to get articles from _Dexerto_, you would make a GET request to https://api-esports-news.herokuapp.com/api/dexerto/.
 
 ## Query String Parameters
 
 1. GET Articles by Category
 
-   > `https://api-esports-news.herokuapp.com/api/`<span style='color:mediumseagreen'>?categories=category1,category2</span>
+   > https://api-esports-news.herokuapp.com/api/<span style='color:mediumseagreen'>?categories=category1,category2</span>
 
    The `categories` query string parameter allows you to filter the returned list of articles by desired topics.
 
@@ -74,7 +74,7 @@ There are 3 valid endpoints for the API at this time:
 
 2. GET Dotesports Articles using Pagination
 
-   > `https://api-esports-news.herokuapp.com/api/dotesports`<span style='color:mediumseagreen'>?page=1</span>
+   > https://api-esports-news.herokuapp.com/api/dotesports<span style='color:mediumseagreen'>?page=1</span>
 
    Dotesports' articles are published using pagination, so I have enabled you to target each page of articles using a `page` query string parameter. Integers greater than 0 are valid values for `page`. Higher values will return older articles.
 
